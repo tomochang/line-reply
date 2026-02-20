@@ -6,14 +6,13 @@ Send LINE messages via Matrix bridge. CLI tools + Claude Code slash command inte
 
 ```
 Your machine                    VPS
- line-send.sh ---SSH--->  send-reply.js
-                          (Matrix API)
+ line-send.sh ---SSH--->  send-reply.js    (send messages)
+ line-inbox.sh --SSH--->  get-inbox.js     (fetch unread)
+ line-rooms.sh --SSH--->  Synapse Admin API (search rooms)
                               |
                          LINE bridge
                               |
                            LINE API
-                              |
-                         Recipient's LINE
 ```
 
 Messages are sent as a Matrix admin user. The [mautrix-meta](https://github.com/mautrix/meta) bridge forwards them to LINE via the admin's UserLogin session.
@@ -40,13 +39,13 @@ cp .env.example .env
 
 ### 2. Deploy server script to VPS
 
-Copy `server/send-reply.js` to your VPS and set the `MATRIX_TOKEN` environment variable:
+Copy server scripts to your VPS and set the `MATRIX_TOKEN` environment variable:
 
 ```bash
-scp server/send-reply.js your-vps:/path/to/send-reply.js
+scp server/send-reply.js server/get-inbox.js your-vps:/path/to/
 ```
 
-On the VPS, make sure `MATRIX_TOKEN` is available to the script (e.g., via systemd environment, `.bashrc`, or a wrapper script).
+On the VPS, make sure `MATRIX_TOKEN` is available to the scripts (e.g., via systemd environment, `.bashrc`, or a wrapper script).
 
 ### 3. Configure .env
 
@@ -54,6 +53,7 @@ On the VPS, make sure `MATRIX_TOKEN` is available to the script (e.g., via syste
 # VPS connection
 LINE_RELAY_HOST=root@YOUR_VPS_IP
 LINE_RELAY_SCRIPT=/path/to/send-reply.js
+LINE_RELAY_INBOX_SCRIPT=/path/to/get-inbox.js
 
 # Matrix admin token (used for room search via Synapse Admin API)
 MATRIX_ADMIN_TOKEN=your_matrix_admin_token
@@ -86,6 +86,14 @@ bin/line-rooms.sh "Tanaka"
 bin/line-rooms.sh --id "!roomid:your.server"
 ```
 
+### Check inbox (unread messages)
+
+```bash
+bin/line-inbox.sh
+```
+
+Returns a JSON array of rooms where the latest message is from someone other than you (i.e., unread/unreplied).
+
 ### Send a message
 
 ```bash
@@ -107,10 +115,13 @@ cp claude-code/line-reply.md ~/.claude/commands/
 Then use it in Claude Code:
 
 ```
-/line-reply Tanaka Hello!
+/line-reply Tanaka Hello!    # Direct reply to a specific person
+/line-reply                   # Inbox mode: triage all unread messages
 ```
 
-Claude Code will search for the room, show you candidates for confirmation, and send the message.
+With arguments, Claude Code searches for the room, shows candidates for confirmation, and sends the message.
+
+Without arguments, it fetches all unread LINE messages and walks you through each one — drafting replies, letting you send or skip, and saving a triage log.
 
 > **Note:** If you cloned the repo to a path other than `~/line-reply`, update the script paths in `claude-code/line-reply.md`.
 

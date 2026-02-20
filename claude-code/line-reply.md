@@ -6,6 +6,7 @@ allowed-tools:
   - Bash
   - Grep
   - AskUserQuestion
+  - Write
 ---
 
 # /line-reply - Send LINE message
@@ -22,12 +23,13 @@ Arguments: $ARGUMENTS
 
 ## Flow
 
-### Step 1: Parse arguments
+### If arguments are provided → Direct reply flow
+
+#### Step 1: Parse arguments
 
 Extract "recipient name" and "message body" from arguments.
-- If empty, use AskUserQuestion to ask for both.
 
-### Step 2: Search rooms
+#### Step 2: Search rooms
 
 ```bash
 ~/line-reply/bin/line-rooms.sh "<search keyword>"
@@ -36,7 +38,7 @@ Extract "recipient name" and "message body" from arguments.
 - Search with **both Japanese and romaji** names if applicable.
 - Results are JSON with `name` and `members` fields.
 
-### Step 3: Show candidates to user (mandatory, never skip)
+#### Step 3: Show candidates to user (mandatory, never skip)
 
 Display search results in a table:
 
@@ -57,9 +59,7 @@ Type heuristic:
 
 **Use AskUserQuestion to let user select.** Always confirm, even with 1 result.
 
-### Step 4: Send (using room_id)
-
-Send using the **room_id** of the user's selection:
+#### Step 4: Send (using room_id)
 
 ```bash
 ~/line-reply/bin/line-send.sh "<room_id>" "<message>"
@@ -67,10 +67,75 @@ Send using the **room_id** of the user's selection:
 
 **Never use `--room-name`. Always use room_id.**
 
-### Step 5: Report result
+#### Step 5: Report result
 
 - Success: `Sent: <event_id>` -> "Sent to <room name>"
 - Failure: Show error message and explain
+
+---
+
+### If no arguments → Inbox triage flow
+
+#### Step 1: Fetch unread messages
+
+```bash
+~/line-reply/bin/line-inbox.sh
+```
+
+Returns JSON array: `[{room_id, room_name, sender, message, timestamp, time}]`
+
+If empty array → "No unread LINE messages" and stop.
+
+#### Step 2: Build triage table
+
+Create a progress tracking table (same format as Messenger triage):
+
+```markdown
+# LINE 未読対応 — YYYY-MM-DD
+
+## 対応済み
+
+| # | チャット | 内容 | 送信メッセージ | 後続処理 |
+|---|---------|------|---------------|---------|
+
+## スルー（対応不要）
+
+| # | チャット | 理由 |
+|---|---------|------|
+
+## 未対応
+
+| # | チャット | プレビュー | 優先度 |
+|---|---------|-----------|--------|
+| 1 | Name    | message... | —      |
+```
+
+Populate "未対応" with all inbox items. Show the table to the user.
+
+#### Step 3: Process each item
+
+For each unread item, in order:
+
+1. **Read context**: Read `~/clawd/private/mizuno_relationships.md` for relationship context with the sender. Check calendar with `gog calendar list` if schedule-related.
+2. **Draft reply**: Propose a reply message based on context.
+3. **User decision** via AskUserQuestion:
+   - **Send** (with optional edits) → Send via `~/line-reply/bin/line-send.sh "<room_id>" "<message>"`, move to 対応済み
+   - **Skip** → Move to スルー with reason
+   - **Later** → Keep in 未対応, move to next item
+4. **Update triage table** after each decision.
+
+#### Step 4: Save triage file
+
+After all items are processed, save the triage table:
+
+```bash
+# Write to ~/clawd/private/line_triage_YYYY-MM-DD.md
+```
+
+Then commit:
+```bash
+cd ~/clawd && git add -A && git commit -m "docs: LINE triage YYYY-MM-DD" && git push
+```
 
 ## Notes
 
