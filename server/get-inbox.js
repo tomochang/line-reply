@@ -4,6 +4,9 @@
 //
 // Returns JSON array of rooms where the latest message is NOT from admin.
 // These are "unread" — someone sent a message that hasn't been replied to.
+//
+// The admin can send messages via Matrix (@admin:matrix.local) OR directly
+// from LINE (appears as a @line_* ghost user). Both are detected as "admin".
 
 const http = require('http');
 
@@ -25,6 +28,7 @@ const SKIP_PATTERNS = [
   /^Messenger Bridge$/i,
   /bridge bot/i,
   /^System Alerts$/i,
+  /^Facebook Messenger/i,
 ];
 
 function matrixRequest(method, endpoint) {
@@ -63,11 +67,26 @@ async function getRooms() {
   return data.rooms || [];
 }
 
-async function getRecentMessages(roomId, limit = 3) {
+async function ensureJoined(roomId) {
   const encoded = encodeURIComponent(roomId);
-  const data = await matrixRequest('GET',
+  await matrixRequest('POST', `/_matrix/client/v3/rooms/${encoded}/join`);
+}
+
+async function getRecentMessages(roomId, limit = 5) {
+  const encoded = encodeURIComponent(roomId);
+  let data = await matrixRequest('GET',
     `/_matrix/client/v3/rooms/${encoded}/messages?limit=${limit}&dir=b`);
-  return (data.chunk || []).filter(e => e.type === 'm.room.message');
+  let messages = (data.chunk || []).filter(e => e.type === 'm.room.message');
+
+  // If no messages, try joining the room first (admin might not be a member)
+  if (messages.length === 0) {
+    await ensureJoined(roomId);
+    data = await matrixRequest('GET',
+      `/_matrix/client/v3/rooms/${encoded}/messages?limit=${limit}&dir=b`);
+    messages = (data.chunk || []).filter(e => e.type === 'm.room.message');
+  }
+
+  return messages;
 }
 
 function shouldSkip(roomName) {
@@ -75,16 +94,56 @@ function shouldSkip(roomName) {
   return SKIP_PATTERNS.some(p => p.test(roomName));
 }
 
+// Detect admin's LINE ghost user by finding which @line_* sender appears
+// in the most rooms. The admin chats with many people, so their ghost
+// user will be the most frequent sender across rooms.
+async function detectAdminGhost(rooms, adminUserId) {
+  const senderRoomMap = {}; // sender -> Set of room_ids
+
+  // Sample up to 30 rooms to find the pattern
+  const sample = rooms.filter(r => r.name && r.joined_members >= 2).slice(0, 30);
+
+  for (const room of sample) {
+    try {
+      const messages = await getRecentMessages(room.room_id, 5);
+      for (const msg of messages) {
+        if (msg.sender.startsWith('@line_') && msg.sender !== adminUserId) {
+          if (!senderRoomMap[msg.sender]) senderRoomMap[msg.sender] = new Set();
+          senderRoomMap[msg.sender].add(room.room_id);
+        }
+      }
+    } catch { continue; }
+  }
+
+  // The ghost user appearing in the most rooms is the admin's
+  let maxCount = 0;
+  let ghostId = null;
+  for (const [sender, roomSet] of Object.entries(senderRoomMap)) {
+    if (roomSet.size > maxCount) {
+      maxCount = roomSet.size;
+      ghostId = sender;
+    }
+  }
+
+  // Only trust detection if ghost appears in at least 3 rooms
+  return maxCount >= 3 ? ghostId : null;
+}
+
 async function main() {
   const adminUserId = await getAdminUserId();
   const rooms = await getRooms();
 
   // Filter to DM rooms (members 2-4: admin + ghost + bridge bot(s))
-  // LINE bridge rooms often have 4 members when both LINE and Messenger bots are present
   const dmRooms = rooms.filter(r => {
     const members = r.joined_members || 0;
     return members >= 2 && members <= 4 && !shouldSkip(r.name);
   });
+
+  // Detect admin's LINE ghost user
+  const adminGhost = await detectAdminGhost(dmRooms, adminUserId);
+
+  const isAdmin = (sender) =>
+    sender === adminUserId || (adminGhost && sender === adminGhost);
 
   const inbox = [];
 
@@ -98,7 +157,7 @@ async function main() {
       const sender = latest.sender;
 
       // If latest message is NOT from admin, it's "unread"
-      if (sender !== adminUserId) {
+      if (!isAdmin(sender)) {
         const body = latest.content?.body || '';
         const ts = latest.origin_server_ts;
 
