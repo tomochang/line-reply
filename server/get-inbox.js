@@ -79,10 +79,11 @@ async function main() {
   const adminUserId = await getAdminUserId();
   const rooms = await getRooms();
 
-  // Filter to DM rooms (members = 2 or 3: admin + ghost + optionally bridge bot)
+  // Filter to DM rooms (members 2-4: admin + ghost + bridge bot(s))
+  // LINE bridge rooms often have 4 members when both LINE and Messenger bots are present
   const dmRooms = rooms.filter(r => {
     const members = r.joined_members || 0;
-    return members >= 2 && members <= 3 && !shouldSkip(r.name);
+    return members >= 2 && members <= 4 && !shouldSkip(r.name);
   });
 
   const inbox = [];
