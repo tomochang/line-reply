@@ -20,12 +20,12 @@ Messages are sent as a Matrix admin user. The [mautrix-meta](https://github.com/
 
 ## Prerequisites
 
-- A VPS running:
-  - [Matrix Synapse](https://github.com/element-hq/synapse) homeserver
-  - [mautrix-meta](https://github.com/mautrix/meta) bridge with LINE login configured
-  - Node.js (for `send-reply.js`)
-- SSH access to the VPS
+- [Matrix Synapse](https://github.com/element-hq/synapse) homeserver
+- [mautrix-meta](https://github.com/mautrix/meta) bridge with LINE login configured
+- Node.js (for `send-reply.js`)
 - Python 3 (for room search filtering)
+
+These can run on a VPS or locally via Docker on your Mac.
 
 ## Setup
 
