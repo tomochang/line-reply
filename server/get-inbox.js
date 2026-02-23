@@ -67,26 +67,12 @@ async function getRooms() {
   return data.rooms || [];
 }
 
-async function ensureJoined(roomId) {
-  const encoded = encodeURIComponent(roomId);
-  await matrixRequest('POST', `/_matrix/client/v3/rooms/${encoded}/join`);
-}
-
 async function getRecentMessages(roomId, limit = 5) {
   const encoded = encodeURIComponent(roomId);
-  let data = await matrixRequest('GET',
-    `/_matrix/client/v3/rooms/${encoded}/messages?limit=${limit}&dir=b`);
-  let messages = (data.chunk || []).filter(e => e.type === 'm.room.message');
-
-  // If no messages, try joining the room first (admin might not be a member)
-  if (messages.length === 0) {
-    await ensureJoined(roomId);
-    data = await matrixRequest('GET',
-      `/_matrix/client/v3/rooms/${encoded}/messages?limit=${limit}&dir=b`);
-    messages = (data.chunk || []).filter(e => e.type === 'm.room.message');
-  }
-
-  return messages;
+  // Use Synapse admin API — reads messages from any room regardless of membership
+  const data = await matrixRequest('GET',
+    `/_synapse/admin/v1/rooms/${encoded}/messages?limit=${limit}&dir=b`);
+  return (data.chunk || []).filter(e => e.type === 'm.room.message');
 }
 
 function shouldSkip(roomName) {
