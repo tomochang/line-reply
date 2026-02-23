@@ -3,7 +3,6 @@
 # Sends a message to LINE via Matrix bridge on a remote VPS
 #
 # Usage:
-#   line-send.sh --room-name "Name" --message "Hello"
 #   line-send.sh <roomId> <message>
 
 set -euo pipefail
@@ -26,9 +25,26 @@ if [ -n "${SSH_KEY:-}" ]; then
 fi
 MAX_RETRIES=2
 
+if [ "$#" -lt 2 ]; then
+  echo "Usage: line-send.sh <roomId> <message>" >&2
+  exit 1
+fi
+
+# Build a safely escaped remote command to avoid shell injection/splitting.
+build_remote_cmd() {
+  local cmd
+  cmd="node $(printf '%q' "$LINE_RELAY_SCRIPT")"
+  for arg in "$@"; do
+    cmd+=" $(printf '%q' "$arg")"
+  done
+  printf '%s' "$cmd"
+}
+
+REMOTE_CMD="$(build_remote_cmd "$@")"
+
 attempt=0
 while [ $attempt -le $MAX_RETRIES ]; do
-  if output=$(ssh $SSH_OPTS "$LINE_RELAY_HOST" "node $LINE_RELAY_SCRIPT $*" 2>&1); then
+  if output=$(ssh $SSH_OPTS "$LINE_RELAY_HOST" "$REMOTE_CMD" 2>&1); then
     echo "$output"
     exit 0
   else

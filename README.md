@@ -97,11 +97,8 @@ Returns a JSON array of rooms where the latest message is from someone other tha
 ### Send a message
 
 ```bash
-# Send by room ID (recommended)
+# Send by room ID
 bin/line-send.sh "!roomid:your.server" "Hello!"
-
-# Send by room name
-bin/line-send.sh --room-name "Tanaka" --message "Hello!"
 ```
 
 ## Claude Code Integration

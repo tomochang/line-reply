@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Send messages to LINE/Messenger via Matrix bridge
 // Usage: node send-reply.js <roomId> <message>
-// or:    node send-reply.js --room-name "Name" --message "Hello"
 //
 // Sends as the Matrix admin user directly.
 // The bridge forwards messages to LINE via admin's UserLogin session.
@@ -47,16 +46,6 @@ function matrixRequest(method, endpoint, body) {
   });
 }
 
-async function findRoomByName(name) {
-  const data = await matrixRequest('GET', '/_synapse/admin/v1/rooms?limit=200');
-  const rooms = data.rooms || [];
-  let match = rooms.find(r => r.name === name);
-  if (!match) {
-    match = rooms.find(r => (r.name || '').includes(name));
-  }
-  return match;
-}
-
 async function ensureJoined(roomId) {
   const encoded = encodeURIComponent(roomId);
   const result = await matrixRequest('POST',
@@ -79,38 +68,12 @@ async function sendMessage(roomId, message) {
 
 async function main() {
   const args = process.argv.slice(2);
-  let roomId, message;
-
-  if (args.includes('--room-name')) {
-    const nameIdx = args.indexOf('--room-name') + 1;
-    const msgIdx = args.indexOf('--message') + 1;
-    if (!nameIdx || !msgIdx) {
-      console.error('Usage: send-reply.js --room-name <name> --message <text>');
-      process.exit(1);
-    }
-    const roomName = args[nameIdx];
-    message = args[msgIdx];
-
-    const room = await findRoomByName(roomName);
-    if (!room) {
-      console.error(`Room not found: ${roomName}`);
-      const data = await matrixRequest('GET', '/_synapse/admin/v1/rooms?limit=200');
-      const similar = (data.rooms || [])
-        .filter(r => (r.name || '').toLowerCase().includes(roomName.toLowerCase()))
-        .map(r => r.name);
-      if (similar.length) console.error(`Similar: ${similar.join(', ')}`);
-      process.exit(1);
-    }
-    roomId = room.room_id;
-    console.log(`Found room: ${room.name} (${roomId})`);
-  } else if (args.length >= 2) {
-    roomId = args[0];
-    message = args.slice(1).join(' ');
-  } else {
+  if (args.length < 2) {
     console.error('Usage: send-reply.js <roomId> <message>');
-    console.error('   or: send-reply.js --room-name <name> --message <text>');
     process.exit(1);
   }
+  const roomId = args[0];
+  const message = args.slice(1).join(' ');
 
   const result = await sendMessage(roomId, message);
   if (result.event_id) {
